@@ -34,6 +34,7 @@ class ClickableLabel(Gtk.EventBox):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
         self._label = Gtk.Label(*args, **kwargs)
+        self._label.set_hexpand(True)
 
         super().connect("enter-notify-event", self._on_enter_notify_event)
         super().connect("leave-notify-event", self._on_leave_notify_event)
@@ -133,6 +134,7 @@ class SimpleStatus(Gtk.Frame):
         self.add(self._grid)
 
         self._label = Gtk.Label()
+        self._label.set_halign(Gtk.Align.START)
         self._label.show()
         self._grid.attach(self._label, 0, 0, 1, 1)
 
@@ -141,18 +143,10 @@ class SimpleStatus(Gtk.Frame):
 
         self._before_link_label = Gtk.Label()
         self._link_grid.add(self._before_link_label)
-
-        hand_cursor = Gdk.Cursor.new(Gdk.CursorType.HAND2)
-
-        self._link_event = Gtk.EventBox()
-        self._link_event.connect("button-press-event", lambda event, button: self.__callback())
-        self._link_event.connect("enter-notify-event", lambda event, button: self.get_window().set_cursor(hand_cursor))
-        self._link_event.connect("leave-notify-event", lambda event, button: self.get_window().set_cursor(None))
         self._user_callback: Optional[Callable[..., Any]] = None
-
-        self._link_label = Gtk.Label()
-        self._link_event.add(self._link_label)
-        self._link_grid.add(self._link_event)
+        self._link_label = ClickableLabel()
+        self._link_label.connect("clicked", lambda event, button: self.__callback())
+        self._link_grid.add(self._link_label)
 
         self._after_link_label = Gtk.Label()
         self._link_grid.add(self._after_link_label)
@@ -216,28 +210,11 @@ class Status(Gtk.Frame):
         self._grid.set_row_spacing(5)
         self.add(self._grid)
 
-        self._display = Gtk.Label()
+        self._display = ClickableLabel()
         self._display.set_markup(markup(self._default_display_text, font_size='large', font_weight='bold'))
-        self._display.set_hexpand(True)
-
-        _hand_cursor = Gdk.Cursor.new(Gdk.CursorType.HAND2)
-
-        self._display_event = Gtk.EventBox()
-        self._display_event.connect("button-press-event", self.__on_display_event_changed)
-
-        self._display_event.connect(
-            "enter-notify-event",
-            lambda event, button: self.get_window().set_cursor(_hand_cursor),
-        )
-
-        self._display_event.connect(
-            "leave-notify-event",
-            lambda event, button: self.get_window().set_cursor(None),
-        )
-
-        self._display_event.set_has_tooltip(True)
-        self._display_event.add(self._display)
-        self._grid.attach(self._display_event, 0, 0, 1, 1)
+        self._display.connect("clicked", self.__on_display_event_changed)
+        self._display.set_has_tooltip(True)
+        self._grid.attach(self._display, 0, 0, 1, 1)
 
         self._status = Gtk.Label()
         self._status.set_markup(markup(_("Loading..."), color='green', font_size='small'))
