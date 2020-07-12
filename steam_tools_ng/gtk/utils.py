@@ -16,17 +16,49 @@
 # along with this program. If not, see http://www.gnu.org/licenses/.
 #
 import asyncio
-import cairo
 import logging
 from collections import OrderedDict
+from typing import Any, Callable, List, Tuple, Optional, Union
+
+import cairo
 from gi.repository import Gtk, Gdk
 from stlib import webapi
-from typing import Any, Callable, List, Tuple, Optional, Union
 
 from .. import i18n, config
 
 log = logging.getLogger(__name__)
 _ = i18n.get_translation
+
+
+class ClickableLabel(Gtk.EventBox):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__()
+        self._label = Gtk.Label(*args, **kwargs)
+
+        super().connect("enter-notify-event", self._on_enter_notify_event)
+        super().connect("leave-notify-event", self._on_leave_notify_event)
+
+        self.add(self._label)
+        self._label.show()
+
+    def _on_enter_notify_event(self, *args, **kwargs) -> None:
+        hand_cursor = Gdk.Cursor.new(Gdk.CursorType.HAND2)
+        self.get_window().set_cursor(hand_cursor)
+
+    def _on_leave_notify_event(self, *args, **kwargs) -> None:
+        self.get_window().set_cursor(None)
+
+    def connect(self, signal: str, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        if signal != "clicked":
+            raise NotImplementedError
+
+        super().connect("button-press-event", callback)
+
+    def set_text(self, *args, **kwargs) -> None:
+        self._label.set_text(*args, **kwargs)
+
+    def set_markup(self, *args, **kwargs) -> None:
+        self._label.set_markup(*args, **kwargs)
 
 
 class VariableButton(Gtk.Button):
