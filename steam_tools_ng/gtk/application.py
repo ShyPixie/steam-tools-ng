@@ -30,7 +30,7 @@ import aiohttp
 from gi.repository import Gio, Gtk
 from stlib import universe, client, plugins, webapi
 
-from . import about, settings, setup, window, utils
+from . import about, settings, login, window, utils
 from .. import config, i18n
 
 _ = i18n.get_translation
@@ -74,6 +74,10 @@ class SteamToolsNG(Gtk.Application):
         assert isinstance(self._webapi_session, webapi.SteamWebAPI), "webapi session has not been created"
         return self._webapi_session
 
+    @property
+    def steamid(self) -> Optional[int]:
+        return config.parser.get("login", "steamid")
+
     def do_startup(self) -> None:
         Gtk.Application.do_startup(self)
 
@@ -104,36 +108,6 @@ class SteamToolsNG(Gtk.Application):
         task = asyncio.gather(self.async_activate())
         task.add_done_callback(self.async_activate_callback)
 
-    def do_login(self, block: bool = False) -> None:
-        encrypted_password = config.parser.get("login", "password")
-        mobile_login = bool(config.parser.get("login", "oauth_token"))
-
-        setup_dialog = setup.SetupDialog(
-            self.main_window,
-            self,
-            mobile_login=mobile_login,
-            relogin=True,
-            destroy_after_run=True,
-        )
-
-        if encrypted_password:
-            log.info(_("User is not logged-in. STNG is automagically fixing that..."))
-            setup_dialog.prepare_login(encrypted_password)
-        else:
-            log.info(_("User is not logged-in. Calling Magic Box."))
-            setup_dialog.prepare_login()
-            setup_dialog.previous_button.hide()
-            setup_dialog.status.info(_("Could not connect to the Steam Servers.\nPlease, relogin."))
-            setup_dialog.status.show()
-
-        # FIXME: Gtk 'run' actually is not compatible with STNG
-        #        'show' function can't block the login process
-        #         Threads isn't usefull here, it's ugly and bad
-        # if block:
-        #    setup_dialog.run()
-        # else:
-        setup_dialog.show()
-
     def async_activate_callback(self, future: 'asyncio.Future[Any]') -> None:
         exception = future.exception()
 
@@ -142,10 +116,23 @@ class SteamToolsNG(Gtk.Application):
             utils.fatal_error_dialog(str(future.exception()), self.main_window)
             self.main_window.destroy()  # type: ignore
 
-    async def async_activate(self) -> None:
-        setup_requested = False
-        login_requested = False
+    async def do_login(self, *, block: bool = True, auto: bool = False) -> None:
+        login_dialog = login.LoginDialog(self.main_window, self)
+        login_dialog.show()
 
+        if auto:
+            encrypted_password = config.parser.get("login", "password")
+            login_dialog.set_password(encrypted_password)
+            login_dialog.login_button.clicked()
+
+        if block:
+            while self.main_window.get_realized():
+                if login_dialog.has_user_data:
+                    break
+
+                await asyncio.sleep(1)
+
+    async def async_activate(self) -> None:
         ssl_context = ssl.SSLContext()
 
         if hasattr(sys, 'frozen'):
@@ -155,56 +142,36 @@ class SteamToolsNG(Gtk.Application):
         tcp_connector = aiohttp.TCPConnector(ssl=ssl_context)
         self._session = aiohttp.ClientSession(raise_for_status=True, connector=tcp_connector)
         self._webapi_session = webapi.SteamWebAPI(self.session, self.api_url)
-
         self._time_offset = await config.time_offset(self.webapi_session)
 
-        assert isinstance(self.main_window, Gtk.Window), "No window is found"
+        self.main_window.set_login_icon('steam', 'yellow')
+        self.main_window.set_warning(_("Logging on Steam. Please wait!"))
+        log.info(_("Logging on Steam"))
 
-        while self.main_window.get_realized():
-            self.main_window.set_login_icon('steam', 'red')
-            token = config.parser.get("login", "token")
-            token_secure = config.parser.get("login", "token_secure")
-            steamid = config.parser.getint("login", "steamid")
+        token = config.parser.get("login", "token")
+        token_secure = config.parser.get("login", "token_secure")
 
-            if not token or not token_secure or not steamid:
-                if not setup_requested:
-                    log.debug(_("Unable to find a valid configuration. Calling Magic Box."))
-                    setup_dialog = setup.SetupDialog(self.main_window, self)
-                    setup_dialog.login_mode()
-                    setup_dialog.show()
-                    setup_requested = True
+        if not token or not token_secure or not self.steamid:
+            await self.do_login()
 
-                await asyncio.sleep(5)
-                continue
+        self.session.cookie_jar.update_cookies(config.login_cookies())  # type: ignore
 
-            setup_requested = False
-            self.main_window.set_login_icon('steam', 'yellow')
-            self.session.cookie_jar.update_cookies(config.login_cookies())  # type: ignore
-
-            try:
-                is_logged_in = await self.webapi_session.is_logged_in(steamid)
-            except aiohttp.ClientError as exception:
-                log.exception(str(exception))
-                utils.fatal_error_dialog(
-                    _("No Connection. Please, check your connection and try again."),
-                    self.main_window,
-                )
-                self.main_window.destroy()
-                return None
-
-            if is_logged_in:
-                self.main_window.set_login_icon('steam', 'green')
+        try:
+            if await self.webapi_session.is_logged_in(self.steamid):
+                self.main_window.set_login_icon("steam", "green")
+                log.info("Steam login Successful")
             else:
-                if not login_requested:
-                    self.do_login()
-                    login_requested = True
+                await self.do_login(auto=True)
+        except aiohttp.ClientError as exception:
+            log.exception(str(exception))
+            utils.fatal_error_dialog(
+                _("No Connection. Please, check your connection and try again."),
+                self.main_window,
+            )
+            self.main_window.destroy()
+            return None
 
-                await asyncio.sleep(5)
-                continue
-
-            login_requested = False
-
-            break
+        self.main_window.unset_warning()
 
         modules = {
             "confirmations": asyncio.ensure_future(self.run_confirmations()),
@@ -235,8 +202,6 @@ class SteamToolsNG(Gtk.Application):
             await asyncio.sleep(3)
 
     async def run_steamguard(self) -> None:
-        assert isinstance(self.main_window, Gtk.Window), "No window"
-
         while self.main_window.get_realized():
             shared_secret = config.parser.get("login", "shared_secret")
 
@@ -247,7 +212,8 @@ class SteamToolsNG(Gtk.Application):
                 server_time = int(time.time()) - self.time_offset
                 auth_code = universe.generate_steam_code(server_time, shared_secret)
             except (ValueError, binascii.Error):
-                self.main_window.set_status("steamguard", error=_("The currently secret is invalid"))
+                log.debug(_("The current shared secret is invalid."))
+                config.new("plugins", "steamguard", False)
                 await asyncio.sleep(10)
             except ProcessLookupError:
                 self.main_window.set_status("steamguard", error=_("Steam Client is not running"))
@@ -269,16 +235,13 @@ class SteamToolsNG(Gtk.Application):
                     await asyncio.sleep(0.125)
 
     async def run_cardfarming(self) -> None:
-        assert isinstance(self.main_window, Gtk.Window), "No Window"
-
         while self.main_window.get_realized():
-            steamid = config.parser.get("login", "steamid")
             reverse_sorting = config.parser.getboolean("cardfarming", "reverse_sorting")
             wait_min = config.parser.getint("cardfarming", "wait_min")
             wait_max = config.parser.getint("cardfarming", "wait_max")
             cookies = config.login_cookies()
 
-            if not steamid:
+            if not self.steamid:
                 raise NotImplementedError
 
             if cookies:
@@ -290,7 +253,7 @@ class SteamToolsNG(Gtk.Application):
 
             try:
                 badges = sorted(
-                    await self.webapi_session.get_badges(steamid),
+                    await self.webapi_session.get_badges(self.steamid),
                     key=lambda badge_: badge_.cards,
                     reverse=reverse_sorting
                 )
@@ -349,7 +312,7 @@ class SteamToolsNG(Gtk.Application):
 
                     while self.main_window.get_realized():
                         try:
-                            badge = await self.webapi_session.update_badge_drops(badge, steamid)
+                            badge = await self.webapi_session.update_badge_drops(badge, self.steamid)
                             break
                         except aiohttp.ClientError:
                             self.main_window.set_status("cardfarming", error=_("No connection"))
@@ -367,16 +330,14 @@ class SteamToolsNG(Gtk.Application):
     async def run_confirmations(self) -> None:
         old_confirmations: List[webapi.Confirmation] = []
 
-        assert isinstance(self.main_window, Gtk.Window), "No window"
-
         while self.main_window.get_realized():
             identity_secret = config.parser.get("login", "identity_secret")
-            steamid = config.parser.getint("login", "steamid")
             deviceid = config.parser.get("login", "deviceid")
-            cookies = config.login_cookies()
+            # cookies = config.login_cookies()
 
             if not identity_secret:
-                self.main_window.set_warning(_("Unable to get confirmations without a valid identity secret"))
+                log.debug(_("The current identity secret is invalid."))
+                config.new("plugins", "confirmations", False)
                 await asyncio.sleep(10)
                 continue
 
@@ -385,22 +346,22 @@ class SteamToolsNG(Gtk.Application):
                 deviceid = universe.generate_device_id(identity_secret)
                 config.new("login", "deviceid", deviceid)
 
-            if not cookies:
-                self.main_window.set_warning(_("Unable to find a valid login data"))
-                await asyncio.sleep(5)
-                continue
+            # if not cookies:
+            #    self.main_window.set_warning(_("Unable to find a valid login data"))
+            #    await asyncio.sleep(5)
+            #    continue
 
-            self.session.cookie_jar.update_cookies(cookies)  # type: ignore
+            # self.session.cookie_jar.update_cookies(cookies)  # type: ignore
 
             if self.main_window.text_tree_lock:
                 self.main_window.set_warning(_("Waiting another confirmation process"))
-                await asyncio.sleep(10)
+                await asyncio.sleep(5)
                 continue
 
             try:
                 confirmations = await self.webapi_session.get_confirmations(
                     identity_secret,
-                    steamid,
+                    self.steamid,
                     deviceid,
                     time_offset=self.time_offset,
                 )
@@ -412,7 +373,7 @@ class SteamToolsNG(Gtk.Application):
             except webapi.LoginError as exception:
                 log.warning(repr(exception))
                 self.main_window.set_warning(_("User is not logged in"))
-                self.do_login(True)
+                await self.do_login(auto=True)
             except aiohttp.ClientError as exception:
                 log.warning(repr(exception))
                 self.main_window.set_warning(_("No connection"))
@@ -479,7 +440,7 @@ class SteamToolsNG(Gtk.Application):
             except webapi.LoginError:
                 self.main_window.set_login_icon('steamtrades', 'red')
                 self.main_window.set_status("steamtrades", error=_("User is not logged in"))
-                self.do_login(True)
+                await self.do_login(auto=True)
                 await asyncio.sleep(15)
                 continue
             except aiohttp.ClientError:
@@ -597,7 +558,7 @@ class SteamToolsNG(Gtk.Application):
             except webapi.LoginError:
                 self.main_window.set_login_icon('steamgifts', 'red')
                 self.main_window.set_status("steamgifts", error=_("User is not logged in"))
-                self.do_login(True)
+                await self.do_login(auto=True)
                 await asyncio.sleep(15)
                 continue
 
