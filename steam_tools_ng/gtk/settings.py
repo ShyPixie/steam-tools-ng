@@ -22,11 +22,9 @@ import os
 import sys
 from collections import OrderedDict
 
-import aiohttp
 from gi.repository import Gtk, Pango
-from stlib import webapi
 
-from . import utils, setup, advanced
+from . import utils, advanced
 from .. import config, i18n
 
 log = logging.getLogger(__name__)
@@ -170,6 +168,38 @@ class SettingsDialog(Gtk.Dialog):
         cardfarming = plugins_section.new("cardfarming", _("Cardfarming:"), Gtk.CheckButton, 0, 3)
         cardfarming.connect("toggled", on_setting_toggled)
 
+        if not config.parser.get("login", "shared_secret"):
+            steamguard.set_sensitive(False)
+            steamguard.label.set_sensitive(False)
+            _steamguard_disabled = Gtk.Label()
+            _steamguard_disabled.set_halign(Gtk.Align.CENTER)
+
+            _message = _(
+                "authenticator module has been disabled because you have\n"
+                "logged in but no shared secret is found. To enable it again,\n"
+                "go to login -> advanced and add a valid shared secret\n"
+                "or use STNG as your Steam Authenticator\n"
+            )
+
+            _steamguard_disabled.set_markup(utils.markup(_message, color="hotpink"))
+            plugins_section.grid.attach(_steamguard_disabled, 0, 4, 4, 4)
+
+        if not config.parser.get("login", "identity_secret"):
+            confirmations.set_sensitive(False)
+            confirmations.label.set_sensitive(False)
+            _confirmations_disabled = Gtk.Label()
+            _confirmations_disabled.set_halign(Gtk.Align.CENTER)
+
+            _message = _(
+                "confirmations module has been disabled because you have\n"
+                "logged in but no identity secret is found. To enable it again,\n"
+                "go to login -> advanced and add a valid identity secret\n"
+                "or use STNG as your Steam Authenticator\n"
+            )
+
+            _confirmations_disabled.set_markup(utils.markup(_message, color="hotpink"))
+            plugins_section.grid.attach(_confirmations_disabled, 0, 8, 4, 4)
+
         plugins_section.show_all()
 
         gtk_section = utils.Section('gtk', _('Gtk Settings'))
@@ -289,6 +319,14 @@ class SettingsDialog(Gtk.Dialog):
         sidebar.show()
         content_grid.show()
         self.show()
+
+    def reset(self) -> None:
+        content_area = self.get_content_area()
+
+        for widget in content_area.get_children():
+            widget.destroy()
+
+        self.__init__(self.parent_window, self.application)
 
     def on_log_button_clicked(self, button: Gtk.Button) -> None:
         os.system(f'{config.file_manager} {config.parser.get("logger", "log_directory")}')

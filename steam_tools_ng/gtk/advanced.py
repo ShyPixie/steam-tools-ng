@@ -22,11 +22,9 @@ import os
 from collections import OrderedDict
 from typing import Any
 
-import aiohttp
 from gi.repository import Gtk
-from stlib import webapi
 
-from . import utils, setup, settings
+from . import utils, settings
 from .. import i18n, config
 
 log = logging.getLogger(__name__)
@@ -148,6 +146,7 @@ class AdvancedSettingsDialog(Gtk.Dialog):
 
     def _exit(self) -> None:
         self.toggle_button.set_active(False)
+        self.parent_window.reset()
         self.destroy()
 
     def on_reset_clicked(self, button: Gtk.Button) -> None:
