@@ -194,7 +194,7 @@ def new(section: str, option: str, value: Any) -> None:
         log.debug(_('Saving %s:%s on config file'), section, option)
         parser.set(section, option, str(value))
 
-        with open(config_file, 'w') as config_file_object:
+        with open(config_file, 'w', encoding="utf8") as config_file_object:
             parser.write(config_file_object)
     else:
         log.debug(_('Not saving %s:%s because values are already updated'), section, option)
