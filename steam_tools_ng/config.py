@@ -216,7 +216,6 @@ def login_cookies() -> Dict[str, str]:
 
 def save_login_data(
         login_data: webapi.LoginData,
-        relogin: bool = False,
         raw_password: Optional[bytes] = None,
 ) -> None:
     if login_data.oauth:
@@ -228,8 +227,10 @@ def save_login_data(
             'account_name': login_data.username,
         }
 
-        if not relogin:
+        if "shared_secret" in login_data.auth:
             new_configs['shared_secret'] = login_data.auth['shared_secret']
+
+        if "identity_secret" in login_data.auth:
             new_configs['identity_secret'] = login_data.auth['identity_secret']
     else:
         new_configs = {
