@@ -165,7 +165,6 @@ class SteamToolsNG(Gtk.Application):
             token = config.parser.get("login", "token")
             token_secure = config.parser.get("login", "token_secure")
             steamid = config.parser.getint("login", "steamid")
-            nickname = config.parser.get("login", "nickname")
 
             if not token or not token_secure or not steamid:
                 if not setup_requested:
@@ -179,29 +178,11 @@ class SteamToolsNG(Gtk.Application):
                 continue
 
             setup_requested = False
-
-            if not nickname:
-                log.debug(_("Unable to find a valid nickname. Generating a new one."))
-                try:
-                    nickname = await self.webapi_session.get_nickname(steamid)
-                except ValueError:
-                    raise NotImplementedError
-                except aiohttp.ClientError as exception:
-                    log.exception(str(exception))
-                    utils.fatal_error_dialog(
-                        _("No Connection. Please, check your connection and try again."),
-                        self.main_window,
-                    )
-                    self.main_window.destroy()
-                    return None
-                else:
-                    config.new('login', 'nickname', nickname)
-
             self.main_window.set_login_icon('steam', 'yellow')
             self.session.cookie_jar.update_cookies(config.login_cookies())  # type: ignore
 
             try:
-                is_logged_in = await self.webapi_session.is_logged_in(nickname)
+                is_logged_in = await self.webapi_session.is_logged_in(steamid)
             except aiohttp.ClientError as exception:
                 log.exception(str(exception))
                 utils.fatal_error_dialog(
@@ -292,13 +273,12 @@ class SteamToolsNG(Gtk.Application):
 
         while self.main_window.get_realized():
             steamid = config.parser.get("login", "steamid")
-            nickname = config.parser.get("login", "nickname")
             reverse_sorting = config.parser.getboolean("cardfarming", "reverse_sorting")
             wait_min = config.parser.getint("cardfarming", "wait_min")
             wait_max = config.parser.getint("cardfarming", "wait_max")
             cookies = config.login_cookies()
 
-            if not steamid or not nickname:
+            if not steamid:
                 raise NotImplementedError
 
             if cookies:
@@ -310,7 +290,7 @@ class SteamToolsNG(Gtk.Application):
 
             try:
                 badges = sorted(
-                    await self.webapi_session.get_badges(nickname),
+                    await self.webapi_session.get_badges(steamid),
                     key=lambda badge_: badge_.cards,
                     reverse=reverse_sorting
                 )
@@ -369,7 +349,7 @@ class SteamToolsNG(Gtk.Application):
 
                     while self.main_window.get_realized():
                         try:
-                            badge = await self.webapi_session.update_badge_drops(badge, nickname)
+                            badge = await self.webapi_session.update_badge_drops(badge, steamid)
                             break
                         except aiohttp.ClientError:
                             self.main_window.set_status("cardfarming", error=_("No connection"))

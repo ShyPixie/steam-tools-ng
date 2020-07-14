@@ -31,6 +31,7 @@ _ = i18n.get_translation
 
 async def run(plugin_manager: plugins.Manager) -> int:
     api_url = config.parser.get('steam', 'api_url')
+    steamid = config.get("login", "steamid")
     session = utils.http_session()
     webapi_session = webapi.SteamWebAPI(session, api_url)
     time_offset = await config.time_offset(webapi_session)
@@ -41,7 +42,6 @@ async def run(plugin_manager: plugins.Manager) -> int:
 
     while True:
         log.info(_("Loading"))
-        nickname = config.parser.get("login", "nickname")
         reverse_sorting = config.parser.getboolean("cardfarming", "reverse_sorting")
         wait_min = config.parser.getint("cardfarming", "wait_min")
         wait_max = config.parser.getint("cardfarming", "wait_max")
@@ -50,7 +50,7 @@ async def run(plugin_manager: plugins.Manager) -> int:
 
         try:
             badges = sorted(
-                await webapi_session.get_badges(nickname),
+                await webapi_session.get_badges(steamid),
                 key=lambda badge_: badge_.cards,
                 reverse=reverse_sorting
             )
@@ -94,7 +94,7 @@ async def run(plugin_manager: plugins.Manager) -> int:
 
                 while True:
                     try:
-                        badge = await webapi_session.update_badge_drops(badge, nickname)
+                        badge = await webapi_session.update_badge_drops(badge, steamid)
                         break
                     except aiohttp.ClientError:
                         log.error(_("No connection"))

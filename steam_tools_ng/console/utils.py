@@ -15,7 +15,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see http://www.gnu.org/licenses/.
 #
-import aiohttp
 import codecs
 import getpass
 import logging
@@ -23,8 +22,10 @@ import os
 import ssl
 import sys
 import tempfile
-from stlib import webapi, universe
 from typing import Optional, Union, List
+
+import aiohttp
+from stlib import webapi, universe
 
 from .. import i18n, config
 
@@ -83,7 +84,6 @@ async def check_login(
     token = config.parser.get("login", "token")
     token_secure = config.parser.get("login", "token_secure")
     steamid = config.parser.getint("login", "steamid")
-    nickname = config.parser.get("login", "nickname")
     mobile_login = bool(config.parser.get("login", "oauth_token"))
     add_auth_after_login = False
     advanced = False
@@ -112,22 +112,10 @@ async def check_login(
     if not token or not token_secure or not steamid:
         is_logged_in = False
     else:
-        if not nickname:
-            try:
-                nickname = await webapi_session.get_nickname(steamid)
-            except ValueError as e:
-                log.exception(str(e))
-                raise NotImplementedError
-            except aiohttp.ClientError:
-                log.critical(_("No Connection. Please, check your connection and try again."))
-                sys.exit(1)
-
-            config.new("login", "nickname", nickname)
-
         session.cookie_jar.update_cookies(config.login_cookies())  # type: ignore
 
         try:
-            is_logged_in = await webapi_session.is_logged_in(nickname)
+            is_logged_in = await webapi_session.is_logged_in(steamid)
         except aiohttp.ClientError:
             log.critical(_("No Connection. Please, check your connection and try again."))
             sys.exit(1)

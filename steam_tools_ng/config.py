@@ -124,7 +124,6 @@ def init() -> None:
                 'account_name': '',
                 'shared_secret': '',
                 'identity_secret': '',
-                'nickname': '',
                 'password': '',
             },
         }
