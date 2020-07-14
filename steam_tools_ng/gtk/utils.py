@@ -152,6 +152,7 @@ class SimpleStatus(Gtk.Frame):
         self._link_grid.add(self._after_link_label)
 
         self.info(_("Waiting"))
+        self.set_size_request(100, 60)
 
     def __callback(self) -> None:
         if not self._user_callback:
