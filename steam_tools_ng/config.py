@@ -206,6 +206,7 @@ def login_cookies() -> Dict[str, str]:
     token_secure = parser.get("login", "token_secure")
 
     if not steamid or not token or not token_secure:
+        log.warning(_("No login cookies"))
         return {}
 
     return {
